@@ -401,7 +401,6 @@ Apart from the products with $\Jg{k}$, these are elementwise operations, so the 
 Putting the pieces together, the computation of a Newton step splits into two parts.
 The first part depends on the iterate only.
 It forms $\Sigma_k$ and $\Hhat{k}$ and runs the matrix part of the backward pass of the square-root Riccati recursion, which yields the factors $\LP{k}$, $L_{R,k}$, $M_k$ and the gains $K_k$.
-In contrast to Algorithm~\ref{alg:sqrt-riccati}, where $L_R$ and $M$ are overwritten from stage to stage, the factors $L_{R,k}$ and $M_k$ are stored as well, because they are needed again in the vector part.
 The second part depends on the complementarity residuals $\rmup{k}$ and $\rmlo{k}$.
 It forms $\rghat{k}$ by \eqref{eq:rghat}, runs the vector part of the backward pass, the forward pass and the recovery \eqref{eq:recover}, and returns the full step $\Delta z$.
 Algorithm~\ref{alg:kkt-solver} states both parts as the procedures \textsc{Factorize} and \textsc{Solve}.
@@ -449,9 +448,9 @@ Both are the subject of the next subsection.
 \EndFor
 \State $p_N \gets \rghat{N}$
 \For{$k = N-1, \dots, 0$}
-\State $w \gets \LP{k+1}\!\left(\LP{k+1}\T \rb{k+1}\right) + p_{k+1}$
+\State $\bar{p} \gets \LP{k+1}\!\left(\LP{k+1}\T \rb{k+1}\right) + p_{k+1}$
 \Comment{\texttt{trmv}, \texttt{trmv}, \texttt{axpy}}
-\State $\begin{bmatrix} \tilde r \\ \tilde q \end{bmatrix} \gets \rghat{k} + \begin{bmatrix} B_k\T \\ A_k\T \end{bmatrix} w$
+\State $\begin{bmatrix} \tilde r \\ \tilde q \end{bmatrix} \gets \rghat{k} + \begin{bmatrix} B_k\T \\ A_k\T \end{bmatrix} \bar{p}$
 \Comment{\texttt{gemv}}
 \State $\zeta \gets L_{R,k}^{-1} \tilde r$,\quad $\kappa_k \gets -L_{R,k}^{-\top} \zeta$
 \Comment{\texttt{trsv}, \texttt{trsv}}

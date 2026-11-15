@@ -6,7 +6,7 @@ The unconstrained finite-horizon linear-quadratic optimal control problem is for
 
 \[
 \begin{aligned}
-    & \underset{u_k, x_k}{\text{minimize}} & & \sum_{k=0}^{N} \frac{1}{2} \vxuone{k}\T \Hcoststacked{k} \vxuone{k} \\
+    & \underset{u_k, x_k}{\text{minimize}} & & \sum_{k=0}^{N-1} \frac{1}{2} \vxuone{k}\T \Hcoststacked{k} \vxuone{k} + \frac{1}{2} x_N\T Q_N x_N + q_N\T x_N \\
     & \text{subject to} & & x_0 = \hat{x}\\
     & & & x_{k+1} = A_k x_k + B_k u_k + b_k, \quad k \in \Iset{0}{N-1}
 \end{aligned}
@@ -94,8 +94,10 @@ where $\mathbf{x} = [x_1; \dots; x_N]$, $\mathbf{u} = [u_0; \dots; u_{N-1}]$, $\
 \end{align*}
 
 This expression can be substituted back into the objective, leaving a condensed QP in the inputs $u_k$ only, parametrized by the initial condition $\hat{x}$.
-Since the dimension of the problem has decreased from roughly $N(n_x + n_u)$ to $N n_u$, this process is known as \textit{condensing}~\cite{frison2013fast}.
+Since the dimension of the problem has decreased from roughly $N(n_x + n_u)$ to $N n_u$, this process is known as \textit{condensing}~\cite{bock1984multiple,frison2013fast}.
 The benefit of a smaller dimension comes at the cost of a dense Hessian.
+Factorizing it costs $\mathcal{O}\!\left(N^3 n_u^3\right)$, i.e.\ the cost is cubic in the horizon again.
+Moreover, $\Gamma$ contains products of up to $N-1$ system matrices, which grow exponentially for unstable $A_k$ and ruin the conditioning of the condensed problem.
 To state the Hessian, we stack the stage weights as $\f{R} := \operatorname{blkdiag}(R_0, \dots, R_{N-1})$ and $\f{Q} := \operatorname{blkdiag}(Q_1, \dots, Q_N)$, matching the stacked states $x_1,\dots,x_N$.
 The initial state $x_0 = \hat{x}$ is fixed and thus contributes to the parametric part of the problem only.
 The same holds for the cross-term $u_0\T S_0 \hat{x}$ of the first stage.
@@ -209,12 +211,12 @@ That means the KKT system obeys a certain sparsity pattern.
 This pattern can be exploited for fast and reliable solutions of the system, which is the core idea of tailored LQMPC solvers~\cite{wang2009fast,frison2020hpipm} and is the main focus of this paper.
 There are in general three approaches to solve this system.
 The first and naive approach would be to feed this system to a dense symmetric-indefinite factorization solver.
-This works, but finding the solution is of order $\mathcal{O}\!\left(N^3 (n_x + n_u)^3\right)$, i.e.\ cubic in the horizon, which is impractical for all but short horizons.
+This works, but since the KKT system has dimension $N(2n_x + n_u) + 2n_x$, finding the solution is of order $\mathcal{O}\!\left(N^3 (2n_x + n_u)^3\right)$, i.e.\ cubic in the horizon, which is impractical for all but short horizons.
 The other two approaches are worth considering in a bit more detail.
 
 \subsubsection{Solution via Block-Cholesky}
 
-The second approach is to notice the \textit{spatial} sparsity pattern of the Hessian $\mathcal{H}$ and realize that it carries over to the normal equations, which have a block-tridiagonal structure.
+The second approach is to notice the sparsity structure of the stacked system, in particular of the Hessian $\mathcal{H}$, and realize that it carries over to the normal equations, which have a block-tridiagonal structure.
 To show this, let us attempt to solve this system by eliminating $y$ from the KKT system, via the Schur complement.
 We thus form
 
@@ -234,7 +236,7 @@ We now define $Y := \mathcal{A} \mathcal{H}^{-1} \mathcal{A}\T$ and $\beta := c 
     Y \pi = \beta
 \]
 
-We now examine the spatial structure of $Y$ more closely.
+We now examine the sparsity structure of $Y$ more closely.
 Here we need $\mathcal{H} \succ 0$, i.e.\ $H_k \succ 0$ for all stages including $Q_N \succ 0$, which holds by assumption.
 Then every $H_k$ is invertible and, since $\mathcal{A}$ has full row rank, $Y \succ 0$ admits a Cholesky factorization.
 We see that the matrix $\mathcal{H}$ is block-diagonal with the stage Hessian blocks
@@ -297,13 +299,18 @@ This fact motivates a blockwise factorization with the following recursion for $
 \]
 
 Finally, solve $L_Y \vY = \beta$ for the intermediate vector $\vY$ by forward substitution, solve $L_Y\T \pi = \vY$ by backward substitution, and recover $y = \mathcal{H}^{-1}(-h - \mathcal{A}\T \pi)$.
+This approach costs $\mathcal{O}\!\left(N (n_x + n_u)^3\right)$.
+In practice, $\Phi_k$ is never formed.
+Instead, each stage Hessian is factored as $H_k = L_k L_k\T$, and with $V := G_{k-1} L_{k-1}^{-\top}$ and $W := E_k L_k^{-\top}$ the diagonal blocks read $Y_{k,k} = V V\T + W W\T$, and analogously $Y_{k,k+1} = -W \big(G_k L_k^{-\top}\big)\T$.
+Since $\mathcal{H}$ is inverted, the approach needs $H_k \succ 0$ at every stage, whereas the Riccati recursion only needs the reduced Hessians $\tilde{R}_k$ introduced below to be positive definite.
+This weaker requirement, together with the interpretation of the solution as a feedback policy, which is what MPC uses, is the reason why we continue with the Riccati recursion.
 For an in-depth discussion and implementation of this method, have a look at FORCES~\cite{domahidi2012efficient}.
 
 \subsubsection{Solution via Dynamic Programming}
 \label{sec:dp}
 
-The third approach is to notice that the problem also has temporal structure.
-Strictly speaking, the spatial structure exploited above also stems from a temporal structure, but the interpretation takes a different route.
+The third approach exploits the stagewise (causal) structure of the problem.
+Strictly speaking, the sparsity structure exploited above also stems from it, but the interpretation takes a different route.
 A closer look at the KKT conditions reveals the temporal relationship.
 The stationarity conditions with respect to $x_k$ can be rewritten as
 
@@ -484,7 +491,7 @@ This is the optimal policy we were looking for: an affine state-feedback law, pa
 The gain $K_k$ depends only on the dynamics, the quadratic weights and $P_{k+1}$, not on the linear terms or the offsets $b_k$: it is the time-varying \textit{LQR gain}~\cite{kalman1960contributions}.
 The feedforward term $\kappa_k$ collects the affine terms in the dynamics and the linear terms in the cost, and it vanishes when $q_j$, $r_j$ and $b_j$ are zero for all $j \in \Iset{k}{N-1}$ and $q_N = 0$, since $p_{k+1}$ carries the linear terms of all future stages.
 
-\paragraph{The Riccati recursion.}
+\paragraph{The Riccati difference equation.}
 Substituting the optimal policy \eqref{eq:optimal_policy} back into the $\mathcal{Q}$-function and collecting terms in $x_k$, we verify the quadratic ansatz and obtain the recursion for $P_k$ and $p_k$.
 The value function at stage $k$ is
 
@@ -564,8 +571,10 @@ Q_k + S_k\T K_k + A_k\T P_{k+1}(A_k + B_k K_k)
 
 and the constant part simplifies to $p_k = \tilde{q}_k + \tilde{S}_k\T \kappa_k$ by an analogous calculation.
 The remaining KKT conditions hold as well: the terminal condition $\pi_N = Q_N x_N + q_N$ follows from $P_N = Q_N$ and $p_N = q_N$, and with $\pi_{k+1} = P_{k+1} x_{k+1} + p_{k+1}$ the input condition $R_k u_k + S_k x_k + r_k + B_k\T \pi_{k+1} = 0$ becomes $\tilde{R}_k u_k + \tilde{S}_k x_k + \tilde{r}_k = 0$, which the optimal policy satisfies by construction.
+Since $\mathcal{A}$ has full row rank, the multipliers of the KKT system are unique, so the $\pi_k$ constructed here are the multipliers.
 Thus $\pi_k = P_k x_k + p_k = \nabla_{x_k} V_k(x_k)$, which confirms the classical result~\cite{bryson1975applied}:
 \textit{the costate is the gradient of the value function}.
+In particular, $\pi_0 = P_0 \hat{x} + p_0 = \nabla_{\hat{x}} V_0(\hat{x})$ is the sensitivity of the optimal cost with respect to the initial state.
 This is the link between the KKT perspective and the dynamic programming perspective.
 The Riccati recursion computes the value function backward in time, which implicitly solves the backward costate dynamics.
 The optimal policy $u_k^* = K_k x_k + \kappa_k$ then provides the missing coupling that decouples the two-point BVP into two sequential passes.
@@ -578,46 +587,42 @@ which solves the unconstrained LQ-OCP in two passes over the horizon: a \textit{
 function and computes the affine feedback law, followed by a \textit{forward pass}
 that rolls out the optimal trajectory.
 
-\paragraph{Backward pass ($k = N-1, N-2, \ldots, 0$).}
-Initialize at the terminal stage with $P_N = Q_N$, $p_N = q_N$.
-For each stage, first assemble the $\mathcal{Q}$-function blocks \eqref{eq:Qtilde}--\eqref{eq:rtilde} from $(P_{k+1}, p_{k+1})$,
-then compute the affine feedback law \eqref{eq:gain}--\eqref{eq:feedforward},
-and finally update the value function by \eqref{eq:riccati_P} and \eqref{eq:riccati_p}, i.e.\ the Schur complement with respect to $\tilde{R}_k$.
-As shown in the paragraph on the connection to the costates, the update can be written with the feedback law as
+\paragraph{Backward pass.}
+Starting from $P_N = Q_N$, $p_N = q_N$, each stage assembles the $\mathcal{Q}$-function blocks \eqref{eq:Qtilde}--\eqref{eq:rtilde} from $(P_{k+1}, p_{k+1})$,
+computes the affine feedback law \eqref{eq:gain}--\eqref{eq:feedforward}
+and updates the value function by the Schur complement \eqref{eq:riccati_P}, \eqref{eq:riccati_p}.
+With $\tilde{R}_k = L_{R,k} L_{R,k}\T$, $M_k := \tilde{S}_k\T L_{R,k}^{-\top}$ and
+$\zeta := L_{R,k}^{-1}\tilde{r}_k$, the update reads
 \[
-P_k = \tilde{Q}_k + \tilde{S}_k\T K_k , \qquad
-p_k = \tilde{q}_k + \tilde{S}_k\T \kappa_k .
+P_k = \tilde{Q}_k - M_k M_k\T, \qquad p_k = \tilde{q}_k - M_k\zeta, \qquad
+K_k = -L_{R,k}^{-\top} M_k\T, \qquad \kappa_k = -L_{R,k}^{-\top}\zeta .
 \]
-These forms reuse $K_k$ and $\kappa_k$, so $\tilde{R}_k$ is factored only
-once per stage. Since $\tilde{S}_k \in \R{n_u \times n_x}$ has the same orientation
+The product $M_k M_k\T$ is symmetric by construction, which the algebraically
+equivalent form $P_k = \tilde{Q}_k + \tilde{S}_k\T K_k$ is not in finite precision.
+Since $\tilde{S}_k \in \R{n_u \times n_x}$ has the same orientation
 as the cross-weight $S_k$, the gain $K_k \in \R{n_u \times n_x}$ maps states to
 inputs directly.
 
-\paragraph{Forward pass ($k = 0, 1, \ldots, N-1$).}
-Starting from $x_0 = \hat{x}$, apply the feedback law and roll the dynamics forward
-\begin{align*}
-u_k^* &= K_k x_k + \kappa_k \\
-x_{k+1} &= A_k x_k + B_k u_k^* + b_k .
-\end{align*}
-If the costates are required, they follow from the value-function gradient,
-\[
-\pi_k = \nabla_{x_k} V_k(x_k) = P_k x_k + p_k .
-\]
+\paragraph{Forward pass.}
+Starting from $x_0 = \hat{x}$, the forward pass applies the feedback law $u_k^* = K_k x_k + \kappa_k$
+and rolls the dynamics forward. If the costates are required, they follow from the
+value-function gradient $\pi_k = P_k x_k + p_k$.
 
 \paragraph{Classical implementation.}
 Algorithm~\ref{alg:classical-riccati} implements the recursion by propagating the
-cost-to-go matrix $P_k$ itself~\cite{frison2013efficient}. Each stage requires a single Cholesky factorization
-$\tilde{R}_k = L_R L_R\T$, from which $M = \tilde{S}_k\T L_R^{-\top}$ yields both the
-Schur complement $P_k = \tilde{Q}_k - M M\T$ and the feedback law.
+cost-to-go matrix $P_k$ itself~\cite{frison2013efficient}, with the update above and
+a single Cholesky factorization of $\tilde{R}_k$ per stage.
 The recursion is well defined as long as $\tilde{R}_k \in \Spp{n_u}$ at every
 stage, which is guaranteed by the standing assumptions
 $H_k \succ 0$ for $k < N$ and $Q_N \succ 0$: as shown in Section~\ref{sec:dp},
 $\tilde{H}_k \succeq H_k \succ 0$, so $\tilde{R}_k \succ 0$ and $P_k \succ 0$ at
 every stage.
-These assumptions are sufficient, not necessary. Existence and uniqueness only
-require $R_k\succ0$, $H_k\succeq0$ and $Q_N\succeq0$, under which the classical
+These assumptions are sufficient, not necessary. Existence and uniqueness already
+hold under $R_k\succ0$, $H_k\succeq0$ and $Q_N\succeq0$, under which the classical
 recursion remains well defined with $P_k\succeq0$~\cite{frison2015algorithms}. These are the requirements
 stated in Algorithm~\ref{alg:classical-riccati}.
+The sharp condition is $\tilde{R}_k \succ 0$ for all $k$, i.e.\ a positive definite
+reduced Hessian.
 Per stage, the work is dominated by propagating $P_{k+1}$ through the dynamics,
 i.e.\ the dense products $A_k\T P_{k+1} A_k$, $B_k\T P_{k+1} A_k$, $B_k\T P_{k+1} B_k$,
 together with the factorization of $\tilde{R}_k$ and the Schur-complement
@@ -627,10 +632,17 @@ $\mathcal{O}\!\left((n_x + n_u)^3\right)$, so the whole recursion costs
 \mathcal{O}\!\left(N (n_x + n_u)^3\right),
 \]
 i.e.\ \textit{linear} in the horizon length $N$ and cubic in the stage
-dimension, compared to $\mathcal{O}\!\left(N^3 (n_x + n_u)^3\right)$ for a dense
+dimension, compared to $\mathcal{O}\!\left(N^3 (2n_x + n_u)^3\right)$ for a dense
 factorization of the full KKT system~\cite{frison2013efficient}.
+The backward pass splits into a \textit{matrix part}, which depends on
+$A_k$, $B_k$, $Q_k$, $R_k$ and $S_k$ only, and a \textit{vector part}, which depends
+on $b_k$, $q_k$ and $r_k$. The matrix part costs
+$\mathcal{O}\!\left(N (n_x + n_u)^3\right)$ and uses level-3 kernels, whereas the
+vector part and the forward pass cost $\mathcal{O}\!\left(N (n_x + n_u)^2\right)$
+and use level-2 kernels only. Algorithms~\ref{alg:classical-riccati}
+and~\ref{alg:sqrt-riccati} state the two parts separately.
 
-\begin{algorithm}[t]
+\begin{algorithm}[H]
 \caption{Classical Riccati recursion}
 \label{alg:classical-riccati}
 \begin{algorithmic}[1]
@@ -638,33 +650,36 @@ factorization of the full KKT system~\cite{frison2013efficient}.
          terminal $Q_N \succeq 0$, $q_N$; initial state $\hat{x}$
          (sufficient for $\tilde{R} \succ 0$ in line~\ref{alg:classical-riccati:potrf})
 \Ensure feedback $K_k, \kappa_k$; trajectory $x_k, u_k$; (optional) costates $\pi_k$
-\Statex \textbf{Backward pass}
+\Statex \textbf{Backward pass, matrix part}
 \Comment{propagate the cost-to-go $P_k$ itself, lower triangle}
-\State $P_N \gets Q_N$,\quad $p_N \gets q_N$
+\State $P_N \gets Q_N$
 \For{$k = N-1, \dots, 0$}
 \State $\begin{bmatrix} \tilde{R} & \tilde{S} \\ \tilde{S}\T & \tilde{Q} \end{bmatrix} \gets
 \begin{bmatrix} R_k & S_k \\ S_k\T & Q_k \end{bmatrix}
 + \begin{bmatrix} B_k\T \\ A_k\T \end{bmatrix} P_{k+1} \begin{bmatrix} B_k & A_k \end{bmatrix}$
-\Comment{\texttt{symm}, \texttt{gemm}}
-\State $w \gets P_{k+1} b_k + p_{k+1}$
+\Comment{\texttt{symm}, \texttt{gemmt}, lower triangle}
+\State factor $\tilde{R} = L_{R,k} L_{R,k}\T$
+\label{alg:classical-riccati:potrf}
+\Comment{\texttt{potrf}}
+\State $M_k \gets \tilde{S}\T L_{R,k}^{-\top}$
+\Comment{\texttt{trsm}}
+\State $P_k \gets \tilde{Q} - M_k M_k\T$
+\Comment{\texttt{syrk}, lower triangle}
+\State $K_k \gets -L_{R,k}^{-\top} M_k\T$
+\Comment{\texttt{trsm}}
+\EndFor
+\Statex \textbf{Backward pass, vector part}
+\State $p_N \gets q_N$
+\For{$k = N-1, \dots, 0$}
+\State $\bar{p} \gets P_{k+1} b_k + p_{k+1}$
 \Comment{\texttt{symv}}
 \State $\begin{bmatrix} \tilde r \\ \tilde q \end{bmatrix} \gets
 \begin{bmatrix} r_k \\ q_k \end{bmatrix}
-+ \begin{bmatrix} B_k\T \\ A_k\T \end{bmatrix} w$
++ \begin{bmatrix} B_k\T \\ A_k\T \end{bmatrix} \bar{p}$
 \Comment{\texttt{gemv}}
-\State factor $\tilde{R} = L_R L_R\T$
-\label{alg:classical-riccati:potrf}
-\Comment{\texttt{potrf}}
-\State $M \gets \tilde{S}\T L_R^{-\top}$
-\Comment{\texttt{trsm}}
-\State $P_k \gets \tilde{Q} - M M\T$
-\Comment{\texttt{syrk}, lower triangle}
-\State $\zeta \gets L_R^{-1}\tilde r$
-\Comment{\texttt{trsv}}
-\State $\begin{bmatrix} K_k & \kappa_k \end{bmatrix} \gets
--L_R^{-\top} \begin{bmatrix} M\T & \zeta \end{bmatrix}$
-\Comment{\texttt{trsm}}
-\State $p_k \gets \tilde q - M\zeta$
+\State $\zeta \gets L_{R,k}^{-1}\tilde r$,\quad $\kappa_k \gets -L_{R,k}^{-\top} \zeta$
+\Comment{\texttt{trsv}, \texttt{trsv}}
+\State $p_k \gets \tilde q - M_k\zeta$
 \Comment{\texttt{gemv}}
 \EndFor
 \Statex \textbf{Forward pass}
@@ -681,10 +696,15 @@ factorization of the full KKT system~\cite{frison2013efficient}.
 \paragraph{Square-root Riccati recursion.}
 Algorithm~\ref{alg:classical-riccati} assembles $P_{k+1}$ explicitly and propagates
 it through the dynamics at every stage. Propagating a Cholesky factor $\LP{k}$
-instead~\cite{frison2013efficient}, with $P_k = \LP{k} \LP{k}\T$, is numerically preferable~\cite{kaminski1971discrete}: since
-$\cond(P_k) = \cond(\LP{k})^2$, every operation carried out on the factor works
-at the square root of the condition number of $P_k$ and hence loses only half as
-many digits to rounding.
+instead~\cite{frison2013efficient}, with $P_k = \LP{k}\LP{k}\T$, has two advantages.
+First, $P_k$ is symmetric positive definite by construction: the subtraction
+$\tilde{Q}_k - M_k M_k\T$ of the classical form, which can turn a nearly singular
+$P_k$ indefinite in finite precision, never takes place. Second, it is cheaper, see
+below. It is not a square-root algorithm in the strict sense
+of~\cite{kaminski1971discrete}, because the Gram matrix
+$\tilde{H}_k = H_k + W\T W$ derived below is still formed. The accuracy of both forms is
+therefore comparable as long as $\cond(P_k)$ stays well below the reciprocal of
+the unit roundoff.
 The derivation rests on the observation that one backward step is entirely a
 \emph{Gram-matrix} operation. With the stage Hessian $H_k$ and the input-major
 dynamics $G_k = \begin{bmatrix} B_k & A_k \end{bmatrix}$, the augmented stage
@@ -730,12 +750,6 @@ explicit permutation at every stage. The classical form is indifferent to the
 ordering, because it addresses the blocks $\tilde{R}_k$, $\tilde{S}_k$ and
 $\tilde{Q}_k$ explicitly.
 
-Note that one squaring remains: $\tilde{H}_k = H_k + W\T W$ is still formed
-explicitly, so the factorization in line~\ref{alg:sqrt-riccati:potrf} of
-Algorithm~\ref{alg:sqrt-riccati} operates on a
-Gram matrix and concedes part of the digits gained by carrying $\LP{k}$. This is
-immaterial as long as $\tilde{H}_k$ is reasonably well conditioned.
-
 Since the full $\tilde{H}_k$ is factored, the square-root form needs
 $\tilde{H}_k \succ 0$ rather than only $\tilde{R}_k \succ 0$, as well as
 $Q_N \succ 0$ for the initial factorization. Under the standing assumptions this
@@ -749,9 +763,12 @@ $Q_k\succeq0$ as long as $A_k$ is invertible, as it is for the zero-order-hold
 discretization of a continuous-time model. Delay states modeled as a shift register
 are the typical exception.
 If the condition fails, a regularization $Q_k+\varepsilon I$ restores it.
+In both algorithms, the pivots of \texttt{potrf} should be checked at run time.
+A non-positive pivot means that the condition is violated, at least numerically,
+and the solver either regularizes, e.g.\ $H_k + \varepsilon I$, or aborts.
 Algorithm~\ref{alg:sqrt-riccati} states the resulting recursion.
 
-\begin{algorithm}[t]
+\begin{algorithm}[H]
 \caption{Square-root Riccati recursion --- Cholesky form}
 \label{alg:sqrt-riccati}
 \begin{algorithmic}[1]
@@ -759,33 +776,36 @@ Algorithm~\ref{alg:sqrt-riccati} states the resulting recursion.
          terminal $Q_N \succ 0$, $q_N$; initial state $\hat{x}$
          (sufficient for $\tilde{H} \succ 0$ in line~\ref{alg:sqrt-riccati:potrf})
 \Ensure feedback $K_k, \kappa_k$; trajectory $x_k, u_k$; (optional) costates $\pi_k$
-\Statex \textbf{Backward pass}
+\Statex \textbf{Backward pass, matrix part}
 \Comment{propagate the factor $\LP{k}$ of the cost-to-go $P_k = \LP{k} \LP{k}\T$}
-\State factor $Q_N = \LP{N} \LP{N}\T$,\quad $p_N \gets q_N$
+\State factor $Q_N = \LP{N} \LP{N}\T$
 \Comment{\texttt{potrf}}
 \For{$k = N-1, \dots, 0$}
 \State $W \gets \LP{k+1}\T \begin{bmatrix} B_k & A_k \end{bmatrix}$
 \Comment{\texttt{trmm},\; $W \in \R{n_x \times (n_u+n_x)}$}
-\State $w \gets \LP{k+1}\!\left(\LP{k+1}\T b_k\right) + p_{k+1}$
-\Comment{\texttt{trmv}, \texttt{trmv}, \texttt{axpy}}
 \State $\tilde{H} \gets
 \begin{bmatrix} R_k & S_k \\ S_k\T & Q_k \end{bmatrix} + W\T W$
 \Comment{\texttt{syrk}, lower triangle}
-\State $\begin{bmatrix} \tilde r \\ \tilde q \end{bmatrix} \gets
-\begin{bmatrix} r_k \\ q_k \end{bmatrix}
-+ \begin{bmatrix} B_k\T \\ A_k\T \end{bmatrix} w$
-\Comment{\texttt{gemv}}
 \State factor $\tilde{H} =
-\begin{bmatrix} L_R & 0 \\ M & \LP{k} \end{bmatrix}
-\begin{bmatrix} L_R\T & M\T \\ 0 & \LP{k}\T \end{bmatrix}$
+\begin{bmatrix} L_{R,k} & 0 \\ M_k & \LP{k} \end{bmatrix}
+\begin{bmatrix} L_{R,k}\T & M_k\T \\ 0 & \LP{k}\T \end{bmatrix}$
 \label{alg:sqrt-riccati:potrf}
 \Comment{\texttt{potrf}, $[u;x]$ order}
-\State $\zeta \gets L_R^{-1}\tilde r$
-\Comment{\texttt{trsv}}
-\State $\begin{bmatrix} K_k & \kappa_k \end{bmatrix} \gets
--L_R^{-\top} \begin{bmatrix} M\T & \zeta \end{bmatrix}$
+\State $K_k \gets -L_{R,k}^{-\top} M_k\T$
 \Comment{\texttt{trsm}}
-\State $p_k \gets \tilde q - M\zeta$
+\EndFor
+\Statex \textbf{Backward pass, vector part}
+\State $p_N \gets q_N$
+\For{$k = N-1, \dots, 0$}
+\State $\bar{p} \gets \LP{k+1}\!\left(\LP{k+1}\T b_k\right) + p_{k+1}$
+\Comment{\texttt{trmv}, \texttt{trmv}, \texttt{axpy}}
+\State $\begin{bmatrix} \tilde r \\ \tilde q \end{bmatrix} \gets
+\begin{bmatrix} r_k \\ q_k \end{bmatrix}
++ \begin{bmatrix} B_k\T \\ A_k\T \end{bmatrix} \bar{p}$
+\Comment{\texttt{gemv}}
+\State $\zeta \gets L_{R,k}^{-1}\tilde r$,\quad $\kappa_k \gets -L_{R,k}^{-\top} \zeta$
+\Comment{\texttt{trsv}, \texttt{trsv}}
+\State $p_k \gets \tilde q - M_k\zeta$
 \Comment{\texttt{gemv}}
 \EndFor
 \Statex \textbf{Forward pass}
