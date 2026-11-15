@@ -7,7 +7,7 @@ We now return to the fully constrained OCP, re-introducing the inequality constr
 & \underset{u_k, x_k}{\text{minimize}} & & \sum_{k=0}^{N} \frac{1}{2} \vxuone{k}\T \Hcoststacked{k} \vxuone{k} & &                      \\
 & \text{subject to}                    & & x_0 = \hat{x}                                                       & &                      \\
 &                                      & & x_{k+1} = A_k x_k + B_k u_k + b_k                                   & & ,k\in\Iset{0}{N-1}   \\
-&                                      & & \underline{x}_k \leq J_k^{bx} x_k \leq \bar{x}_k                    & & ,k\in\Iset{0}{N}     \\
+&                                      & & \underline{x}_k \leq J_k^{bx} x_k \leq \bar{x}_k                    & & ,k\in\Iset{1}{N}     \\
 &                                      & & \underline{u}_k \leq J_k^{bu} u_k \leq \bar{u}_k                    & & ,k\in\Iset{0}{N-1}   \\
 &                                      & & \underline{d}_k \leq D_k u_k + C_k x_k \leq \bar{d}_k               & & ,k\in\Iset{0}{N}
 \end{aligned}
@@ -16,6 +16,7 @@ We now return to the fully constrained OCP, re-introducing the inequality constr
 The inequality constraints fall into box constraints on states and inputs and polytopic constraints, as introduced in Section~\ref{sec:lq_ocp}.
 
 \subsection{The KKT System}
+\label{sec:kkt_constrained}
 
 Adding the box and polytopic inequalities to the OCP preserves strict convexity, so the solution is unique whenever the feasible set is nonempty, which we assume from here on.
 Since all constraints are affine, the KKT conditions remain necessary and sufficient.
@@ -30,7 +31,7 @@ We collect the cost terms of the stage variable $y_k = [u_k; x_k]$, in input-maj
     h_k := \begin{bmatrix} r_k \\ q_k \end{bmatrix}.
 \]
 All inequality constraints of stage $k$ act on $y_k$ only.
-For $k\in\Iset{0}{N-1}$, we stack the input boxes, the state boxes and the polytopic constraints into one constraint matrix
+For $k\in\Iset{1}{N-1}$, we stack the input boxes, the state boxes and the polytopic constraints into one constraint matrix
 \[
     \Jg{k} :=
     \begin{bmatrix}
@@ -63,8 +64,10 @@ The row blocks of $\Jg{k}$ are of two kinds: the box rows are rows of an identit
 The column partition $\begin{bmatrix} \Jgu{k} & \Jgx{k} \end{bmatrix}$ determines which blocks of the stage Hessian a row touches.
 At the terminal stage there is no input, so as in Section~\ref{sec:kkt} we have $y_N = x_N$, $H_N = Q_N$ and $h_N = q_N$.
 Hence $\Jg{N} = \Jgx{N} = [J_N^{bx}; C_N]$ has $m_N := n_{bx} + n_p$ rows, with $\bar{g}_N := [\bar{x}_N; \bar{d}_N]$ and $\underline{g}_N := [\underline{x}_N; \underline{d}_N]$.
-If a bound is absent on one side, the corresponding row, slack and multiplier are dropped from that side only.
-We keep the common dimension $m_k$ for notational simplicity.
+At the initial stage the state is fixed and carries no state box constraints, see Section~\ref{sec:lq_ocp}.
+Hence $\Jg{0} = \begin{bmatrix} J_0^{bu} & 0 \\ D_0 & 0 \end{bmatrix}$, i.e.\ $\Jgx{0} = 0$, has $m_0 := n_{bu} + n_p$ rows, and the constant term $C_0\hat{x}$ is moved into the bounds, $\bar{g}_0 := [\bar{u}_0; \bar{d}_0 - C_0\hat{x}]$ and $\underline{g}_0 := [\underline{u}_0; \underline{d}_0 - C_0\hat{x}]$.
+If a bound is absent on one side, we keep the row on that side for notational simplicity, so that both sides have the common dimension $m_k$, and \textit{mask} the corresponding component.
+How masked components are treated by the interior-point method is described in Section~\ref{sec:mehrotra}.
 
 \paragraph{The Lagrangian.}
 We attach the multipliers $\pi_0 \in \R{n_x}$ to the initial condition and $\pi_{k+1} \in \R{n_x}$ to the dynamic constraint of stage $k$.
@@ -99,9 +102,9 @@ Differentiating \eqref{eq:lagrangian} with respect to $u_k$ and $x_k$ separately
     \nabla_{x_N}\mathcal{L} &= Q_N x_N + q_N + \Jgx{N}\T(\bar{\lambda}_N - \underline{\lambda}_N) - \pi_N = 0. && \label{eq:stat_x_N}
 \end{align}
 Both sides of a constraint enter only through the difference $\bar{\lambda}_k - \underline{\lambda}_k$, because the lower-bound constraint carries the matrix $-\Jg{k}$.
-With $G_k$ and $E_k$ from Section~\ref{sec:kkt}, equations \eqref{eq:stat_u} and \eqref{eq:stat_x} combine into the compact stage form
+With $G_k$ and $E_k$ from Section~\ref{sec:kkt}, equations \eqref{eq:stat_u} and \eqref{eq:stat_x} combine into the compact stage form % TODO: reintroduce Gk and Ek here.
 \begin{equation} \label{eq:stat_y}
-    H_k y_k + h_k + \Jg{k}\T(\bar{\lambda}_k - \underline{\lambda}_k) + G_k\T \pi_{k+1} - E_k\T \pi_k = 0 .
+    H_k y_k + h_k + \Jg{k}\T(\bar{\lambda}_k - \underline{\lambda}_k) + G_k\T \pi_{k+1} - E_k\T \pi_k = 0 , \qquad k\in\Iset{0}{N-1} .
 \end{equation}
 
 \paragraph{Stationarity in the slacks.}
@@ -143,7 +146,7 @@ The sign conditions \eqref{eq:kkt_sign} are inequalities and are not part of thi
 \subsection{The Primal-Dual IPM}
 \label{sec:ipm}
 
-Equations \eqref{eq:kkt_stat}--\eqref{eq:kkt_slack_lo} are affine in the unknowns, but they do not determine them: the slacks and multipliers of the inequalities are fixed only by the complementarity condition \eqref{eq:kkt_compl} together with the sign conditions \eqref{eq:kkt_sign}.
+Equations \eqref{eq:kkt_stat}--\eqref{eq:kkt_slack_lo} are affine in the unknowns, but they do not determine them. The slacks and multipliers of the inequalities are fixed only by the complementarity condition \eqref{eq:kkt_compl} together with the sign conditions \eqref{eq:kkt_sign}. %TODO: What is meant by "but they don't determine them" ?
 This is where the entire difficulty sits.
 To see why, consider a single inequality, that is, one component pair $(\lambda, t)$ of $(\bar{\lambda}_k, \bar{t}_k)$ or $(\underline{\lambda}_k, \underline{t}_k)$.
 The conditions
@@ -154,13 +157,15 @@ are satisfied exactly on the two non-negative half-axes $\{(\lambda, 0) : \lambd
 This set is an L-shape with a corner at the origin.
 On the arm $t = 0$ the inequality is active and its multiplier $\lambda$ is free to be positive.
 On the arm $\lambda = 0$ the inequality is inactive.
-With $n_c := 2\sum_{k=0}^{N} m_k$ such pairs there are $2^{n_c}$ ways of assigning each pair to an arm.
+Let $n_c$ denote the number of such pairs, i.e.\ $n_c = 2\sum_{k=0}^{N} m_k$ minus the number of masked components.
+There are at most $2^{n_c}$ ways of assigning each pair to an arm, and in fact fewer, since the upper and the lower side of one row cannot both be active when its bounds differ.
 For a fixed assignment, \eqref{eq:kkt_stat}--\eqref{eq:kkt_compl} reduce to a linear system, in which the active inequalities act as equality constraints and the inactive ones are dropped.
 A solution of this system solves the OCP if and only if it satisfies the sign conditions \eqref{eq:kkt_sign}.
 Finding the correct assignment is the \textit{active-set problem}, which is combinatorial~\cite{ferreau2014qpoases}.
 
 Applying Newton's method directly to \eqref{eq:kkt_stat}--\eqref{eq:kkt_compl} does not remove this difficulty.
-Every solution of such a linear system is a root of \eqref{eq:kkt_stat}--\eqref{eq:kkt_compl}, and Newton's method knows nothing about the sign conditions \eqref{eq:kkt_sign}: it may converge to a root with negative components, or leave the non-negative quadrant on the way.
+Every solution of such a linear system is a root of \eqref{eq:kkt_stat}--\eqref{eq:kkt_compl}, and Newton's method knows nothing about the sign conditions \eqref{eq:kkt_sign}.
+The method may converge to a root with negative components, or leave the non-negative orthant on the way.
 In addition, the gradient $(t, \lambda)$ of the product $\lambda\, t$ vanishes at the corner, so the linearization degenerates there.
 
 \paragraph{Perturbation and the central path.}
@@ -179,16 +184,19 @@ The sign conditions are therefore replaced by their strict version
     \bar{\lambda}_k,\, \underline{\lambda}_k,\, \bar{t}_k,\, \underline{t}_k > 0, \qquad k\in\Iset{0}{N},
 \end{equation}
 which selects the correct branch.
-This is not an additional equation but a restriction of the domain, which the algorithm has to maintain explicitly, as we will see when choosing the step length.
+This is not an additional equation but a restriction of the domain, which the algorithm has to maintain explicitly.
 Let $F_\tau(z) = 0$ denote the system \eqref{eq:kkt_stat}--\eqref{eq:kkt_slack_lo} together with \eqref{eq:kkt_central}, where $z := [y; \pi; \bar{\lambda}; \underline{\lambda}; \bar{t}; \underline{t}]$ stacks all unknowns over the stages.
-We assume that a strictly feasible point exists, i.e.\ a point that satisfies the initial condition, the dynamics and \eqref{eq:kkt_slack_up}--\eqref{eq:kkt_slack_lo} with strictly positive slacks (Slater's condition~\cite{boyd2004convex}).
-This excludes equal lower and upper bounds, and it requires $\hat{x}$ to lie strictly inside the state bounds of stage $0$.
+We assume that a strictly feasible point exists, i.e.\ a point that satisfies the initial condition, the dynamics and \eqref{eq:kkt_slack_up}--\eqref{eq:kkt_slack_lo} with strictly positive slacks (Slater's condition~\cite{boyd2004convex}). %TODO: define slaters condition in a bit more detail than just a side note in paranthesis
+This excludes equal lower and upper bounds.
+At stage $0$ only the input bounds and the shifted polytopic bounds enter, so the condition there is the existence of an input $u_0$ that satisfies them strictly, while the measured state $\hat{x}$ may lie on the state bounds.
+This is the reason for dropping the state constraints of stage $0$.
 Together with the strict convexity from above, $F_\tau(z) = 0$ then has a unique solution $z(\tau)$ satisfying \eqref{eq:sign_strict} for every $\tau > 0$.
 The curve $\tau \mapsto z(\tau)$ is called the \textit{central path}.
 Along it the slacks and multipliers stay strictly positive, and it converges to a solution of \eqref{eq:kkt} as $\tau \to 0$.
 The arm to which each pair belongs is no longer chosen by a search, but is decided by the path itself.
 
 \paragraph{Barrier interpretation.}
+%TODO: Is this paragraph really necessary ?
 The perturbed system is the KKT system of a \textit{barrier problem}.
 Take the slack reformulation, drop the sign constraints on the slacks, and add $-\tau\, \mathbf{1}\T\log \bar{t}_k - \tau\, \mathbf{1}\T\log \underline{t}_k$ to the stage cost, where the logarithm acts elementwise.
 The logarithm is only defined for positive arguments, so the sign constraints are enforced implicitly.
@@ -199,7 +207,7 @@ The Lagrangian of this problem is \eqref{eq:lagrangian} with $\bar{\nu}_k = \und
 with the inverse taken elementwise.
 Multiplying elementwise by the slacks gives \eqref{eq:kkt_central}.
 The primal-dual method does not eliminate $\lambda$ via $\lambda = \tau / t$, but keeps it as an independent unknown.
-The equations then stay bilinear, $\lambda\, t = \tau$, instead of the strongly nonlinear $\lambda - \tau / t = 0$, which becomes steep for $t \to 0$.
+The equations then stay bilinear, $\lambda\, t = \tau$, instead of the strongly nonlinear $\lambda - \tau / t = 0$, which becomes steep for $t \to 0$. %TODO: What is the difference of these two equations ?
 Newton's method behaves much better on the former.
 
 \paragraph{Duality measure.}
@@ -208,7 +216,8 @@ The parameter $\tau$ is tied to the \textit{duality measure}~\cite{wright1997pri
     \mu := \frac{1}{n_c}\sum_{k=0}^{N} \Big( \bar{\lambda}_k\T \bar{t}_k + \underline{\lambda}_k\T \underline{t}_k \Big) ,
 \]
 which equals $\tau$ on the central path.
-It also bounds the suboptimality.
+We assume $n_c > 0$, since without inequality constraints the OCP is solved directly by the Riccati recursion of Section~\ref{sec:riccati}.
+The duality measure also bounds the suboptimality.
 Let $f(y) := \sum_{k=0}^{N-1} l_k(u_k, x_k) + l_N(x_N)$, and let $z$ satisfy \eqref{eq:kkt_stat}--\eqref{eq:kkt_slack_lo} with non-negative multipliers and slacks.
 Let $y^*$ be the solution of the OCP, with slacks $\bar{t}_k^* = \bar{g}_k - \Jg{k} y_k^* \geq 0$ and $\underline{t}_k^* = \Jg{k} y_k^* - \underline{g}_k \geq 0$.
 Convexity of $f$ gives
@@ -276,5 +285,404 @@ The unknowns are the steps of all variables, and the right-hand side consists of
 The coefficient matrix depends on the iterate only through $\bar{\Lambda}_k, \bar{T}_k, \underline{\Lambda}_k, \underline{T}_k$.
 System \eqref{eq:newton_delta} is called the \textit{delta form} because its solution is the step itself.
 Predictor and corrector below differ in the complementarity residuals $\rmup{k}$ and $\rmlo{k}$ only.
+From here on we therefore treat $\rmup{k}$ and $\rmlo{k}$ in \eqref{eq:nd_cup} and \eqref{eq:nd_clo} as generic right-hand sides of the linearized complementarity.
+For the Newton step on $F_\tau$ they are the residuals defined above, whereas the corrector of Section~\ref{sec:mehrotra} adds a second-order term.
+
+\paragraph{Elimination of the slack and multiplier steps.}
+System \eqref{eq:newton_delta} is not symmetric, and compared to the KKT system of the unconstrained OCP it carries four additional blocks of unknowns per stage, $\Delta\bar{t}_k$, $\Delta\underline{t}_k$, $\Delta\bar{\lambda}_k$ and $\Delta\underline{\lambda}_k$.
+These blocks never couple different stages, and their coefficient matrices in \eqref{eq:nd_up}--\eqref{eq:nd_clo} are either the identity or the diagonal matrices $\bar{T}_k$, $\bar{\Lambda}_k$, $\underline{T}_k$, $\underline{\Lambda}_k$.
+They can therefore be eliminated stage by stage, using elementwise operations only.
+What remains is a system in $\Delta y_k$ and $\Delta\pi_k$ that has the form of the KKT conditions of the unconstrained OCP, so that the Riccati recursion of Section~\ref{sec:riccati} computes the Newton step.
+
+The slack equations \eqref{eq:nd_up} and \eqref{eq:nd_lo} give the slack steps explicitly.
+Since the slacks are strictly positive by \eqref{eq:sign_strict}, $\bar{T}_k$ and $\underline{T}_k$ are invertible, and the linearized complementarity \eqref{eq:nd_cup} and \eqref{eq:nd_clo} gives the multiplier steps.
+For $k\in\Iset{0}{N}$,
+\begin{subequations} \label{eq:recover}
+\begin{align}
+    \Delta\bar{t}_k &= -\rdup{k} - \Jg{k}\Delta y_k , &
+    \Delta\underline{t}_k &= -\rdlo{k} + \Jg{k}\Delta y_k , \label{eq:recover_t}\\
+    \Delta\bar{\lambda}_k &= -\bar{T}_k^{-1}\big(\rmup{k} + \bar{\Lambda}_k\Delta\bar{t}_k\big) , &
+    \Delta\underline{\lambda}_k &= -\underline{T}_k^{-1}\big(\rmlo{k} + \underline{\Lambda}_k\Delta\underline{t}_k\big) . \label{eq:recover_lambda}
+\end{align}
+\end{subequations}
+We introduce the diagonal matrices
+\[
+    \bar{\Sigma}_k := \bar{T}_k^{-1}\bar{\Lambda}_k ,
+    \qquad
+    \underline{\Sigma}_k := \underline{T}_k^{-1}\underline{\Lambda}_k ,
+    \qquad
+    \Sigma_k := \bar{\Sigma}_k + \underline{\Sigma}_k ,
+\]
+whose entries are the ratios $\lambda / t$ of the individual pairs.
+Inserting \eqref{eq:recover_t} into \eqref{eq:recover_lambda} yields
+\begin{align*}
+    \Delta\bar{\lambda}_k &= \bar{\Sigma}_k\Jg{k}\Delta y_k + \bar{\Sigma}_k\rdup{k} - \bar{T}_k^{-1}\rmup{k} , \\
+    \Delta\underline{\lambda}_k &= -\underline{\Sigma}_k\Jg{k}\Delta y_k + \underline{\Sigma}_k\rdlo{k} - \underline{T}_k^{-1}\rmlo{k} .
+\end{align*}
+As in \eqref{eq:stat_y}, the stationarity \eqref{eq:nd_stat} contains the multiplier steps only through their difference
+\[
+    \Delta\bar{\lambda}_k - \Delta\underline{\lambda}_k
+    = \Sigma_k\Jg{k}\Delta y_k + \bar{\Sigma}_k\rdup{k} - \underline{\Sigma}_k\rdlo{k} - \bar{T}_k^{-1}\rmup{k} + \underline{T}_k^{-1}\rmlo{k} .
+\]
+Substituting it into \eqref{eq:nd_stat} removes the last inequality quantities from the stationarity.
+Together with the unchanged equations \eqref{eq:nd_init} and \eqref{eq:nd_dyn}, the steps $\Delta y_k$ and $\Delta\pi_k$ are determined by the \textit{reduced system}
+\begin{subequations} \label{eq:newton_reduced}
+\begin{align}
+    \Hhat{k}\Delta y_k + G_k\T\Delta\pi_{k+1} - E_k\T\Delta\pi_k &= -\rghat{k} , && k\in\Iset{0}{N}, \label{eq:nr_stat}\\
+    -E_0\Delta y_0 &= -\rb{0} , && \label{eq:nr_init}\\
+    G_k\Delta y_k - E_{k+1}\Delta y_{k+1} &= -\rb{k+1} , && k\in\Iset{0}{N-1}, \label{eq:nr_dyn}
+\end{align}
+\end{subequations}
+with the \textit{barrier-weighted stage Hessian} and the modified stationarity residual
+\begin{align}
+    \Hhat{k} &:= H_k + \Jg{k}\T\Sigma_k\Jg{k} , \label{eq:Hhat}\\
+    \rghat{k} &:= \rg{k} + \Jg{k}\T\big(\bar{\Sigma}_k\rdup{k} - \underline{\Sigma}_k\rdlo{k} - \bar{T}_k^{-1}\rmup{k} + \underline{T}_k^{-1}\rmlo{k}\big) . \label{eq:rghat}
+\end{align}
+The inequalities no longer appear as unknowns, but only as a weighted quadratic term in the stage Hessian.
+The hat marks quantities that are modified by the barrier weights $\Sigma_k$, whereas the tilde of Section~\ref{sec:dp} marks the augmentation by the propagated cost-to-go $P_{k+1}$.
+Both appear in the Riccati recursion of the Newton step, where the augmented stage Hessian is $\tilde{H}_k = \Hhat{k} + G_k\T P_{k+1} G_k$.
+An active constraint, $t \to 0$ with $\lambda > 0$, receives a large weight $\lambda / t$, which heavily penalizes any change of the constrained quantity, so that it acts almost like an equality constraint.
+An inactive constraint, $\lambda \to 0$ with $t > 0$, receives a vanishing weight and drops out of $\Hhat{k}$.
+Since all multipliers and slacks are strictly positive, $\Sigma_k$ has positive diagonal entries, hence $\Jg{k}\T\Sigma_k\Jg{k} \succeq 0$ and $\Hhat{k} \succeq H_k \succ 0$ at every stage, including $\Hhat{N} \succeq Q_N \succ 0$.
+The standing assumption of Section~\ref{sec:lq_ocp} thus carries over to the reduced system.
+
+To see how the inequalities enter the individual blocks, we partition $\Sigma_k$ conformally with the row blocks of $\Jg{k}$ as $\Sigma_k = \operatorname{blkdiag}(\Sigma_k^{bu}, \Sigma_k^{bx}, \Sigma_k^{p})$.
+Inserting the block structure of $\Jg{k}$ gives
+\[
+    \Hhat{k} = \begin{bmatrix} \hat{R}_k & \hat{S}_k \\ \hat{S}_k\T & \hat{Q}_k \end{bmatrix}
+\]
+with
+\begin{align*}
+    \hat{R}_k &= R_k + (J_k^{bu})\T\Sigma_k^{bu}J_k^{bu} + D_k\T\Sigma_k^{p}D_k , \\
+    \hat{S}_k &= S_k + D_k\T\Sigma_k^{p}C_k , \\
+    \hat{Q}_k &= Q_k + (J_k^{bx})\T\Sigma_k^{bx}J_k^{bx} + C_k\T\Sigma_k^{p}C_k .
+\end{align*}
+Box and polytopic constraints enter in different ways.
+The selection matrices $J_k^{bu}$ and $J_k^{bx}$ consist of rows of the identity matrix, so $(J_k^{bu})\T\Sigma_k^{bu}J_k^{bu}$ and $(J_k^{bx})\T\Sigma_k^{bx}J_k^{bx}$ are diagonal.
+Each box constraint adds its single entry of $\Sigma_k$ to the diagonal entry of $\hat{R}_k$ or $\hat{Q}_k$ that belongs to the bounded input or state.
+It couples no variables and leaves $\hat{S}_k$ untouched.
+Forming these terms requires no matrix product, only $n_{bu} + n_{bx}$ additions to the diagonal.
+Likewise, for the box rows the products with $\Jg{k}$ and $\Jg{k}\T$ in \eqref{eq:rghat} and \eqref{eq:recover_t} reduce to picking out and adding back individual entries.
+The polytopic constraints, in contrast, enter densely.
+The terms $D_k\T\Sigma_k^{p}D_k$, $D_k\T\Sigma_k^{p}C_k$ and $C_k\T\Sigma_k^{p}C_k$ are dense updates of rank at most $n_p$ of all three blocks.
+They couple inputs and states, and they are the only contribution to $\hat{S}_k$.
+Their cost is that of a dense matrix product, $\mathcal{O}\!\left(n_p (n_u + n_x)^2\right)$ per stage.
+At the terminal stage there is no input, and $\Hhat{N} = \hat{Q}_N = Q_N + (J_N^{bx})\T\Sigma_N^{bx}J_N^{bx} + C_N\T\Sigma_N^{p}C_N$.
+At the initial stage $\Jgx{0} = 0$, so $\hat{S}_0 = S_0$ and $\hat{Q}_0 = Q_0$, and the constraints enter $\hat{R}_0$ only.
+
+Written in stage form, the KKT conditions of the unconstrained OCP of Section~\ref{sec:kkt} read $H_k y_k + h_k + G_k\T\pi_{k+1} - E_k\T\pi_k = 0$ for $k\in\Iset{0}{N}$, $-E_0 y_0 = -\hat{x}$ and $G_k y_k - E_{k+1} y_{k+1} = -b_k$ for $k\in\Iset{0}{N-1}$.
+The reduced system \eqref{eq:newton_reduced} has exactly this form, with the substitutions
+\begin{gather*}
+    y_k \to \Delta y_k , \qquad
+    \pi_k \to \Delta\pi_k , \qquad
+    (R_k, S_k, Q_k) \to (\hat{R}_k, \hat{S}_k, \hat{Q}_k) , \\
+    \begin{bmatrix} r_k \\ q_k \end{bmatrix} \to \rghat{k} , \qquad
+    \hat{x} \to \rb{0} , \qquad
+    b_k \to \rb{k+1} .
+\end{gather*}
+In other words, $\Delta y_k = [\Delta u_k; \Delta x_k]$ is the solution of the unconstrained OCP
+\[
+\begin{aligned}
+    & \underset{\Delta u_k, \Delta x_k}{\text{minimize}} & & \sum_{k=0}^{N} \frac{1}{2} \Delta y_k\T \Hhat{k} \Delta y_k + \rghat{k}\T \Delta y_k \\
+    & \text{subject to} & & \Delta x_0 = \rb{0} \\
+    & & & \Delta x_{k+1} = A_k \Delta x_k + B_k \Delta u_k + \rb{k+1}, \quad k \in \Iset{0}{N-1}
+\end{aligned}
+\]
+and $\Delta\pi_k$ are its multipliers.
+Since $\Hhat{k} \succ 0$, Algorithms~\ref{alg:classical-riccati} and~\ref{alg:sqrt-riccati} apply unchanged to these data and return $\Delta u_k$, $\Delta x_k$ and, via $\Delta\pi_k = P_k \Delta x_k + p_k$, the costate steps.
+The latter are no longer optional, since the multipliers $\pi_k$ are part of the iterate and have to be updated as well.
+Note that $P_k$, $p_k$, $K_k$ and $\kappa_k$ now denote the Riccati quantities of this step problem, which depend on the current iterate through $\Hhat{k}$ and $\rghat{k}$.
+The matrices $\Sigma_k$, and with them $\Hhat{k}$, depend on the iterate only and not on the residuals.
+The matrix part of the backward pass, i.e.\ $P_k$ (or $\LP{k}$) and $K_k$, is therefore shared by predictor and corrector, and only the vector part $p_k$, $\kappa_k$ and the forward pass have to be repeated for the second right-hand side.
+Finally, once $\Delta y_k$ is known, the eliminated steps are recovered stage by stage from \eqref{eq:recover}, first the slack steps \eqref{eq:recover_t} and then the multiplier steps \eqref{eq:recover_lambda}.
+Apart from the products with $\Jg{k}$, these are elementwise operations, so the recovery is cheap compared to the Riccati recursion.
+
+\paragraph{The KKT solver.}
+Putting the pieces together, the computation of a Newton step splits into two parts.
+The first part depends on the iterate only.
+It forms $\Sigma_k$ and $\Hhat{k}$ and runs the matrix part of the backward pass of the square-root Riccati recursion, which yields the factors $\LP{k}$, $L_{R,k}$, $M_k$ and the gains $K_k$.
+In contrast to Algorithm~\ref{alg:sqrt-riccati}, where $L_R$ and $M$ are overwritten from stage to stage, the factors $L_{R,k}$ and $M_k$ are stored as well, because they are needed again in the vector part.
+The second part depends on the complementarity residuals $\rmup{k}$ and $\rmlo{k}$.
+It forms $\rghat{k}$ by \eqref{eq:rghat}, runs the vector part of the backward pass, the forward pass and the recovery \eqref{eq:recover}, and returns the full step $\Delta z$.
+Algorithm~\ref{alg:kkt-solver} states both parts as the procedures \textsc{Factorize} and \textsc{Solve}.
+\textsc{Factorize} costs $\mathcal{O}\!\left(N \big[(n_x + n_u)^3 + n_p (n_x + n_u)^2\big]\right)$ and uses level-3 kernels, whereas \textsc{Solve} costs $\mathcal{O}\!\left(N \big[(n_x + n_u)^2 + n_p (n_x + n_u)\big]\right)$ and uses level-2 kernels only.
+One factorization can therefore serve several right-hand sides at a small extra cost.
+The KKT solver is the core of the IPM: everything the outer method has to supply is the iterate and the complementarity right-hand sides, which encode the target $\tau$ and, for the corrector, the second-order correction, and everything it has to decide is the step length.
+Both are the subject of the next subsection.
+
+\begin{algorithm}[H]
+\caption{KKT solver --- factorization and solve}
+\label{alg:kkt-solver}
+\begin{algorithmic}[1]
+\Require data of Algorithm~\ref{alg:sqrt-riccati}; constraints $\Jg{k}$; iterate $z$ with \eqref{eq:sign_strict}; residuals $\rg{k}$, $\rb{k}$, $\rdup{k}$, $\rdlo{k}$
+\Ensure \textsc{Factorize}: stored $\bar{\Sigma}_k$, $\underline{\Sigma}_k$, factors $\LP{k}$, $L_{R,k}$, $M_k$, gains $K_k$; \textsc{Solve}: Newton step $\Delta z$
+\Procedure{Factorize}{}
+\Comment{depends on the iterate only}
+\For{$k = 0, \dots, N$}
+\State $\bar{\Sigma}_k \gets \bar{T}_k^{-1}\bar{\Lambda}_k$,\quad $\underline{\Sigma}_k \gets \underline{T}_k^{-1}\underline{\Lambda}_k$,\quad $\Sigma_k \gets \bar{\Sigma}_k + \underline{\Sigma}_k$
+\Comment{elementwise}
+\State $\Hhat{k} \gets H_k + \Jg{k}\T \Sigma_k \Jg{k}$
+\Comment{diagonal (box), \texttt{syrk} on $(\Sigma_k^{p})^{1/2}\begin{bmatrix} D_k & C_k \end{bmatrix}$ (polytopic)}
+\EndFor
+\State factor $\Hhat{N} = \LP{N} \LP{N}\T$
+\Comment{\texttt{potrf}}
+\For{$k = N-1, \dots, 0$}
+\State $W \gets \LP{k+1}\T \begin{bmatrix} B_k & A_k \end{bmatrix}$
+\Comment{\texttt{trmm}}
+\State $\tilde{H} \gets \Hhat{k} + W\T W$
+\Comment{\texttt{syrk}, lower triangle}
+\State factor $\tilde{H} =
+\begin{bmatrix} L_{R,k} & 0 \\ M_k & \LP{k} \end{bmatrix}
+\begin{bmatrix} L_{R,k}\T & M_k\T \\ 0 & \LP{k}\T \end{bmatrix}$
+\Comment{\texttt{potrf}, $[u;x]$ order}
+\State $K_k \gets -L_{R,k}^{-\top} M_k\T$
+\Comment{\texttt{trsm}}
+\EndFor
+\EndProcedure
+\Procedure{Solve}{$\rmup{k}, \rmlo{k}$}
+\Comment{one call per right-hand side}
+\For{$k = 0, \dots, N$}
+\State $\rho_k \gets \bar{\Sigma}_k \rdup{k} - \underline{\Sigma}_k \rdlo{k} - \bar{T}_k^{-1} \rmup{k} + \underline{T}_k^{-1} \rmlo{k}$
+\Comment{elementwise}
+\State $\rghat{k} \gets \rg{k} + \Jg{k}\T \rho_k$
+\Comment{scatter (box), \texttt{gemv} (polytopic)}
+\EndFor
+\State $p_N \gets \rghat{N}$
+\For{$k = N-1, \dots, 0$}
+\State $w \gets \LP{k+1}\!\left(\LP{k+1}\T \rb{k+1}\right) + p_{k+1}$
+\Comment{\texttt{trmv}, \texttt{trmv}, \texttt{axpy}}
+\State $\begin{bmatrix} \tilde r \\ \tilde q \end{bmatrix} \gets \rghat{k} + \begin{bmatrix} B_k\T \\ A_k\T \end{bmatrix} w$
+\Comment{\texttt{gemv}}
+\State $\zeta \gets L_{R,k}^{-1} \tilde r$,\quad $\kappa_k \gets -L_{R,k}^{-\top} \zeta$
+\Comment{\texttt{trsv}, \texttt{trsv}}
+\State $p_k \gets \tilde q - M_k \zeta$
+\Comment{\texttt{gemv}}
+\EndFor
+\State $\Delta x_0 \gets \rb{0}$
+\For{$k = 0, \dots, N-1$}
+\State $\Delta u_k \gets K_k \Delta x_k + \kappa_k$
+\Comment{\texttt{gemv}}
+\State $\Delta x_{k+1} \gets A_k \Delta x_k + B_k \Delta u_k + \rb{k+1}$
+\Comment{\texttt{gemv}}
+\State $\Delta\pi_k \gets \LP{k}\!\left(\LP{k}\T \Delta x_k\right) + p_k$
+\Comment{\texttt{trmv}, \texttt{trmv}}
+\EndFor
+\State $\Delta\pi_N \gets \LP{N}\!\left(\LP{N}\T \Delta x_N\right) + p_N$
+\Comment{\texttt{trmv}, \texttt{trmv}}
+\For{$k = 0, \dots, N$}
+\State $v_k \gets \Jg{k} \Delta y_k$
+\Comment{gather (box), \texttt{gemv} (polytopic)}
+\State $\Delta\bar{t}_k \gets -\rdup{k} - v_k$,\quad $\Delta\underline{t}_k \gets -\rdlo{k} + v_k$
+\Comment{elementwise}
+\State $\Delta\bar{\lambda}_k \gets -\bar{T}_k^{-1}\big(\rmup{k} + \bar{\Lambda}_k \Delta\bar{t}_k\big)$,\quad
+       $\Delta\underline{\lambda}_k \gets -\underline{T}_k^{-1}\big(\rmlo{k} + \underline{\Lambda}_k \Delta\underline{t}_k\big)$
+\Comment{elementwise}
+\EndFor
+\State \Return $\Delta z$
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Mehrotra's Predictor-Corrector Method}
+\label{sec:mehrotra}
+
+With the KKT solver at hand, two decisions of the path-following scheme remain open: the target $\tau$ and the step length.
+Mehrotra's predictor-corrector method~\cite{mehrotra1992implementation} answers both with one factorization per iteration~\cite{wright1997primal,nocedal2006numerical}.
+It first computes a pure Newton step towards the solution of the unperturbed KKT system, the \textit{predictor}.
+How far this step gets before it hits the boundary of the non-negative orthant tells how much centering is needed.
+A second step, the \textit{corrector}, then aims at the correspondingly chosen point of the central path and additionally compensates the second-order term that the linearization neglects.
+Both steps have the same coefficient matrix, so they share one call of \textsc{Factorize} and differ only in the call of \textsc{Solve}.
+
+\paragraph{Predictor.}
+The predictor sets $\tau = 0$, i.e.\ it solves the Newton system with the complementarity residuals
+\[
+    \rmup{k} = \bar{\lambda}_k \odot \bar{t}_k ,
+    \qquad
+    \rmlo{k} = \underline{\lambda}_k \odot \underline{t}_k ,
+    \qquad k\in\Iset{0}{N}.
+\]
+Its solution $\Delta z^{\text{aff}}$ is called the \textit{affine-scaling direction}.
+It is the Newton step for the unperturbed system \eqref{eq:kkt_stat}--\eqref{eq:kkt_compl} and, as discussed at the beginning of this section, knows nothing about the sign conditions.
+It is therefore not taken, but only used to gather information.
+
+\paragraph{Step to the boundary.}
+For an iterate $z$ satisfying \eqref{eq:sign_strict} and a direction $\Delta z$, the largest step that keeps the multipliers and slacks non-negative is
+\begin{equation} \label{eq:alpha_max}
+\begin{aligned}
+    \alpha_{\max}(z, \Delta z) := \sup\big\{ \alpha > 0 : \;
+        & \bar{\lambda}_k + \alpha\Delta\bar{\lambda}_k \geq 0,\;
+          \underline{\lambda}_k + \alpha\Delta\underline{\lambda}_k \geq 0, \\
+        & \bar{t}_k + \alpha\Delta\bar{t}_k \geq 0,\;
+          \underline{t}_k + \alpha\Delta\underline{t}_k \geq 0,\;
+          k\in\Iset{0}{N} \big\} .
+\end{aligned}
+\end{equation}
+It is computed componentwise.
+Let $v$ denote any component of $\bar{\lambda}_k$, $\underline{\lambda}_k$, $\bar{t}_k$ or $\underline{t}_k$, and $\Delta v$ the corresponding component of the step.
+Only components with $\Delta v < 0$ can reach zero, which happens at $\alpha = -v / \Delta v > 0$, so that $\alpha_{\max}$ is the minimum of these ratios, and $\alpha_{\max} = \infty$ if no component decreases.
+For the predictor, the step is additionally limited to the full Newton step, which gives $\alpha_{\text{aff}} := \min\big(1, \alpha_{\max}(z, \Delta z^{\text{aff}})\big)$ and the duality measure that a step of this length would achieve,
+\[
+    \mu_{\text{aff}} := \frac{1}{n_c}\sum_{k=0}^{N} \Big(
+        (\bar{\lambda}_k + \alpha_{\text{aff}}\Delta\bar{\lambda}_k^{\text{aff}})\T (\bar{t}_k + \alpha_{\text{aff}}\Delta\bar{t}_k^{\text{aff}})
+      + (\underline{\lambda}_k + \alpha_{\text{aff}}\Delta\underline{\lambda}_k^{\text{aff}})\T (\underline{t}_k + \alpha_{\text{aff}}\Delta\underline{t}_k^{\text{aff}})
+    \Big) .
+\]
+
+\paragraph{Centering.}
+The target of the corrector is the point $z(\tau)$ of the central path with $\tau = \sigma\mu$, where the \textit{centering parameter} is chosen by Mehrotra's heuristic
+\[
+    \sigma := \left( \frac{\mu_{\text{aff}}}{\mu} \right)^3 \in [0, 1] .
+\]
+That $\sigma \leq 1$, i.e.\ $\mu_{\text{aff}} \leq \mu$, follows componentwise.
+For a single pair, the predictor satisfies $t\, \Delta\lambda + \lambda\, \Delta t = -\lambda t < 0$, so $\Delta\lambda$ and $\Delta t$ cannot both be non-negative.
+For $\alpha \in [0, \alpha_{\text{aff}}]$, the product $(\lambda + \alpha\Delta\lambda)(t + \alpha\Delta t) = (1-\alpha)\lambda t + \alpha^2 \Delta\lambda\, \Delta t$ is therefore at most $\lambda t$: if $\Delta\lambda, \Delta t < 0$, both factors decrease and remain non-negative, and otherwise $\Delta\lambda\, \Delta t \leq 0$.
+If the predictor makes good progress, $\mu_{\text{aff}} \ll \mu$, then $\sigma \approx 0$ and the corrector aims almost at the solution itself.
+If the predictor is blocked early by the boundary, $\mu_{\text{aff}} \approx \mu$, then $\sigma \approx 1$ and the corrector aims at the central path at the current duality measure, i.e.\ it recenters the iterate before the next attempt to reduce $\mu$.
+The cube is an empirical choice that works well in practice~\cite{mehrotra1992implementation}.
+The method as a whole is a heuristic as well: in the form presented here it comes without a convergence guarantee, and globally convergent variants add safeguards on $\sigma$ and the step length~\cite{wright1997primal,nocedal2006numerical}.
+It also assumes a feasible OCP and contains no infeasibility detection.
+
+\paragraph{Corrector.}
+The linearization of the complementarity in \eqref{eq:nd_cup} and \eqref{eq:nd_clo} neglects a second-order term, since
+\[
+    (\bar{\lambda}_k + \Delta\bar{\lambda}_k) \odot (\bar{t}_k + \Delta\bar{t}_k)
+    = \bar{\lambda}_k \odot \bar{t}_k + \bar{T}_k \Delta\bar{\lambda}_k + \bar{\Lambda}_k \Delta\bar{t}_k + \Delta\bar{\lambda}_k \odot \Delta\bar{t}_k ,
+\]
+and likewise for the lower side.
+The predictor provides an estimate $\Delta\bar{\lambda}_k^{\text{aff}} \odot \Delta\bar{t}_k^{\text{aff}}$ of this term.
+The corrector solves the Newton system for the target $\tau = \sigma\mu$ and moves the estimate to the right-hand side, which gives the complementarity residuals
+\begin{equation} \label{eq:rm_corrector}
+    \rmup{k} = \bar{\lambda}_k \odot \bar{t}_k + \Delta\bar{\lambda}_k^{\text{aff}} \odot \Delta\bar{t}_k^{\text{aff}} - \sigma\mu \mathbf{1} ,
+    \qquad
+    \rmlo{k} = \underline{\lambda}_k \odot \underline{t}_k + \Delta\underline{\lambda}_k^{\text{aff}} \odot \Delta\underline{t}_k^{\text{aff}} - \sigma\mu \mathbf{1} .
+\end{equation}
+All other residuals and the matrices $\Sigma_k$ are the same as for the predictor, so the factorization is reused and only \textsc{Solve} is called again.
+Its result $\Delta z$ is the search direction of the iteration.
+It replaces the predictor direction and is not added to it.
+
+\paragraph{Step length and update.}
+The full step along $\Delta z$ would in general violate the strict sign conditions \eqref{eq:sign_strict}.
+The step length is therefore chosen as a fixed fraction of the step to the boundary,
+\[
+    \alpha := \min\big(1,\, \gamma\, \alpha_{\max}(z, \Delta z)\big) ,
+\]
+with a \textit{fraction-to-boundary} parameter $\gamma \in (0, 1)$ close to one, and all variables are updated with the same step length, $z \gets z + \alpha\Delta z$.
+A common step length has a useful consequence.
+The residuals $\rg{k}$, $\rb{k}$, $\rdup{k}$ and $\rdlo{k}$ are affine in $z$, and the step satisfies their linearizations \eqref{eq:nd_stat}--\eqref{eq:nd_lo} exactly, for the predictor as well as for the corrector.
+For example, $\rdup{k}(z + \alpha\Delta z) = \rdup{k} + \alpha(\Jg{k}\Delta y_k + \Delta\bar{t}_k) = (1 - \alpha)\, \rdup{k}$.
+Hence all of them are reduced by the factor $1 - \alpha$ in every iteration.
+Once a full step $\alpha = 1$ is taken, the iterate is primal and dual feasible, and it stays feasible from then on.
+With separate step lengths for the primal and the dual variables this would not hold for $\rg{k}$, which contains both.
+
+\paragraph{Initialization.}
+The method does not require a feasible initial point, only one that satisfies \eqref{eq:sign_strict}.
+A simple cold start sets $y_k = 0$ and $\pi_k = 0$.
+At $y_k = 0$ the slack equations would give $\bar{t}_k = \bar{g}_k$ and $\underline{t}_k = -\underline{g}_k$, which need not be positive.
+These values are therefore clipped at a threshold $\theta > 0$, and the multipliers are chosen such that every pair lies on the hyperbola $\lambda\, t = \mu_0$ for some $\mu_0 > 0$,
+\[
+    \bar{t}_k = \max(\bar{g}_k, \theta\mathbf{1}) , \qquad
+    \underline{t}_k = \max(-\underline{g}_k, \theta\mathbf{1}) , \qquad
+    \bar{\lambda}_k = \mu_0\, \bar{t}_k^{-1} , \qquad
+    \underline{\lambda}_k = \mu_0\, \underline{t}_k^{-1} ,
+\]
+with the maximum and the inverse taken elementwise.
+The initial point is thus perfectly centered with $\mu = \mu_0$.
+It is in general infeasible, since $\rb{0} = \hat{x}$, $\rb{k+1} = b_k$, $\rg{k} = h_k + \Jg{k}\T(\bar{\lambda}_k - \underline{\lambda}_k)$, and the slack residuals do not vanish for the clipped components.
+This is no obstacle, since the residuals are reduced by the factor $1 - \alpha$ in every iteration.
+
+\paragraph{Absent bounds.}
+A masked component, as introduced with the slack reformulation in Section~\ref{sec:kkt_constrained}, is a pair $(\lambda, t)$ of a bound that does not exist.
+It is initialized with $\lambda = 0$ and $t = 1$, and it is exempt from the strict sign conditions \eqref{eq:sign_strict}.
+In every iteration, its entries of the slack residual $\rdup{k}$ or $\rdlo{k}$ and of the complementarity right-hand side $\rmup{k}$ or $\rmlo{k}$ are set to zero, and its slack step $\Delta t$ is set to zero after the recovery \eqref{eq:recover}.
+Everything else follows automatically.
+Its entry of $\Sigma_k$ is $\lambda / t = 0$, so it adds nothing to $\Hhat{k}$, and its contribution to $\rghat{k}$ vanishes.
+The recovery \eqref{eq:recover_lambda} gives $\Delta\lambda = 0$, so the pair keeps $\lambda = 0$ and $t = 1$, does not restrict $\alpha_{\max}$, and contributes $\lambda t = 0$ to $\mu$ and $\mu_{\text{aff}}$, whose normalization $n_c$ counts the present bounds only.
+
+\paragraph{Termination.}
+The complementarity residuals depend on the target $\tau$, which changes from iteration to iteration, and are therefore no suitable optimality measure.
+Instead, the duality measure $\mu$ is tested directly, together with the residuals that do not depend on $\tau$.
+The method is stopped as soon as
+\begin{equation} \label{eq:termination}
+\begin{gathered}
+    \max_{k} \|\rg{k}\|_\infty \leq \varepsilon_g , \qquad
+    \max_{k} \|\rb{k}\|_\infty \leq \varepsilon_b , \\
+    \max_{k} \max\big(\|\rdup{k}\|_\infty, \|\rdlo{k}\|_\infty\big) \leq \varepsilon_d , \qquad
+    \mu \leq \varepsilon_\mu ,
+\end{gathered}
+\end{equation}
+with tolerances $\varepsilon_g, \varepsilon_b, \varepsilon_d, \varepsilon_\mu > 0$, or when a maximum number of iterations $i_{\max}$ is reached.
+For an iterate that is feasible in the primal and the dual sense, the duality measure bounds the suboptimality by $n_c\, \mu$, see the paragraph on the duality measure above.
+For an iterate that satisfies the tolerances, this bound holds up to terms of the order of the residuals, so the test on $\mu$ is a test on the suboptimality.
+
+\paragraph{The algorithm.}
+Algorithm~\ref{alg:ipm} summarizes the complete method.
+All operations with a stage index $k$ are carried out for every stage.
+Each iteration evaluates the residuals, calls \textsc{Factorize} once and \textsc{Solve} twice, and performs a few vector operations.
+Masked components are handled as described in the paragraph on absent bounds and are omitted from the algorithm for clarity.
+
+\begin{algorithm}[H]
+\caption{Primal-dual IPM with Mehrotra's predictor-corrector}
+\label{alg:ipm}
+\begin{algorithmic}[1]
+\Require data of Algorithm~\ref{alg:sqrt-riccati}; constraints $\Jg{k}$, $\bar{g}_k$, $\underline{g}_k$;
+         parameters $\theta, \mu_0 > 0$, $\gamma \in (0,1)$; tolerances $\varepsilon_g, \varepsilon_b, \varepsilon_d, \varepsilon_\mu$; $i_{\max}$
+\Ensure iterate $z = [y; \pi; \bar{\lambda}; \underline{\lambda}; \bar{t}; \underline{t}]$
+\Statex \textbf{Initialization}
+\State $y_k \gets 0$,\quad $\pi_k \gets 0$
+\State $\bar{t}_k \gets \max(\bar{g}_k, \theta\mathbf{1})$,\quad $\underline{t}_k \gets \max(-\underline{g}_k, \theta\mathbf{1})$
+\Comment{elementwise}
+\State $\bar{\lambda}_k \gets \mu_0\, \bar{t}_k^{-1}$,\quad $\underline{\lambda}_k \gets \mu_0\, \underline{t}_k^{-1}$
+\Comment{elementwise}
+\For{$i = 0, \dots, i_{\max} - 1$}
+\Statex \hspace{\algorithmicindent}\textbf{Residuals and termination}
+\State $\rg{k} \gets H_k y_k + h_k + \Jg{k}\T(\bar{\lambda}_k - \underline{\lambda}_k) + G_k\T \pi_{k+1} - E_k\T \pi_k$
+\Comment{\texttt{symv}, \texttt{gemv}}
+\State $\rb{0} \gets \hat{x} - x_0$,\quad $\rb{k+1} \gets G_k y_k + b_k - x_{k+1}$
+\Comment{\texttt{gemv}}
+\State $\rdup{k} \gets \Jg{k} y_k + \bar{t}_k - \bar{g}_k$,\quad $\rdlo{k} \gets -\Jg{k} y_k + \underline{t}_k + \underline{g}_k$
+\Comment{gather, \texttt{gemv}}
+\State $\mu \gets \frac{1}{n_c} \sum_{k} \big( \bar{\lambda}_k\T \bar{t}_k + \underline{\lambda}_k\T \underline{t}_k \big)$
+\Comment{\texttt{dot}}
+\If{\eqref{eq:termination} holds}
+\State \Return $z$
+\EndIf
+\Statex \hspace{\algorithmicindent}\textbf{Factorization}
+\State \Call{Factorize}{}
+\Comment{Alg.~\ref{alg:kkt-solver}, level 3}
+\Statex \hspace{\algorithmicindent}\textbf{Predictor}
+\State $\rmup{k} \gets \bar{\lambda}_k \odot \bar{t}_k$,\quad $\rmlo{k} \gets \underline{\lambda}_k \odot \underline{t}_k$
+\Comment{elementwise}
+\State $\Delta z^{\text{aff}} \gets$ \Call{Solve}{$\rmup{k}, \rmlo{k}$}
+\Comment{Alg.~\ref{alg:kkt-solver}, level 2}
+\State $\alpha_{\text{aff}} \gets \min\big(1, \alpha_{\max}(z, \Delta z^{\text{aff}})\big)$
+\Comment{elementwise, \eqref{eq:alpha_max}}
+\State $\mu_{\text{aff}} \gets$ duality measure at $z + \alpha_{\text{aff}} \Delta z^{\text{aff}}$
+\Comment{\texttt{axpy}, \texttt{dot}}
+\State $\sigma \gets (\mu_{\text{aff}} / \mu)^3$
+\Statex \hspace{\algorithmicindent}\textbf{Corrector}
+\State $\rmup{k} \gets \bar{\lambda}_k \odot \bar{t}_k + \Delta\bar{\lambda}_k^{\text{aff}} \odot \Delta\bar{t}_k^{\text{aff}} - \sigma\mu\mathbf{1}$
+\Comment{elementwise}
+\State $\rmlo{k} \gets \underline{\lambda}_k \odot \underline{t}_k + \Delta\underline{\lambda}_k^{\text{aff}} \odot \Delta\underline{t}_k^{\text{aff}} - \sigma\mu\mathbf{1}$
+\Comment{elementwise}
+\State $\Delta z \gets$ \Call{Solve}{$\rmup{k}, \rmlo{k}$}
+\Comment{Alg.~\ref{alg:kkt-solver}, level 2}
+\Statex \hspace{\algorithmicindent}\textbf{Update}
+\State $\alpha \gets \min\big(1, \gamma\, \alpha_{\max}(z, \Delta z)\big)$
+\Comment{elementwise, \eqref{eq:alpha_max}}
+\State $z \gets z + \alpha \Delta z$
+\Comment{\texttt{axpy}}
+\EndFor
+\State \Return $z$
+\Comment{iteration limit reached}
+\end{algorithmic}
+\end{algorithm}
+
+Practically all floating-point operations of an iteration are spent in \textsc{Factorize}~\cite{frison2020hpipm}.
+Its backward pass consists of the same level-3 kernels on small dense blocks as Algorithm~\ref{alg:sqrt-riccati}, i.e.\ \texttt{trmm}, \texttt{syrk}, \texttt{potrf} and \texttt{trsm}, at a cost of $\mathcal{O}\!\left(N (n_x + n_u)^3\right)$, for which optimized implementations exist~\cite{frison2018blasfeo}.
+Forming $\Hhat{k}$ adds one \texttt{syrk} on the scaled rows $(\Sigma_k^{p})^{1/2}\begin{bmatrix} D_k & C_k \end{bmatrix}$ of cost $\mathcal{O}\!\left(n_p (n_x + n_u)^2\right)$ per stage for the polytopic constraints, while the box constraints only add to the diagonal.
+The two calls of \textsc{Solve} use the level-2 kernels \texttt{trmv}, \texttt{trsv} and \texttt{gemv} at a cost of $\mathcal{O}\!\left(N \big[(n_x + n_u)^2 + n_p (n_x + n_u)\big]\right)$ each.
+This is the reason why Mehrotra's corrector pays off: it improves the search direction considerably, but costs only one additional level-2 sweep over the horizon and no additional factorization.
+The residuals cost a few \texttt{symv} and \texttt{gemv} per stage, and all remaining operations, i.e.\ the computation of $\Sigma_k$, the step lengths, the duality measures and the update, are level-1 or elementwise operations of cost $\mathcal{O}\!\left(\sum_{k=0}^{N} (m_k + n_x + n_u)\right)$.
+For the box rows, the products with $\Jg{k}$ and $\Jg{k}\T$ never call a BLAS kernel, but reduce to gathering and scattering individual entries.
 
 \newpage

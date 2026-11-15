@@ -8,7 +8,7 @@ The finite-horizon linear-quadratic optimal control problem is formulated as fol
 & \underset{u_k, x_k}{\text{minimize}} & & \sum_{k=0}^{N} \frac{1}{2} \vxuone{k}\T \Hcoststacked{k} \vxuone{k} & &                      \\
 & \text{subject to}                    & & x_0 = \hat{x}                                                       & &                      \\
 &                                      & & x_{k+1} = A_k x_k + B_k u_k + b_k                                   & & ,k\in\Iset{0}{N-1}   \\
-&                                      & & \underline{x}_k \leq J_k^{bx} x_k \leq \bar{x}_k                    & & ,k\in\Iset{0}{N}     \\
+&                                      & & \underline{x}_k \leq J_k^{bx} x_k \leq \bar{x}_k                    & & ,k\in\Iset{1}{N}     \\
 &                                      & & \underline{u}_k \leq J_k^{bu} u_k \leq \bar{u}_k                    & & ,k\in\Iset{0}{N-1}   \\
 &                                      & & \underline{d}_k \leq D_k u_k + C_k x_k \leq \bar{d}_k               & & ,k\in\Iset{0}{N}
 \end{aligned}
@@ -16,7 +16,7 @@ The finite-horizon linear-quadratic optimal control problem is formulated as fol
 
 With the states $x_k \in\Xset\subseteq\R{n_x}$ and inputs $u_k \in\Uset\subseteq\R{n_u}$.
 The state and input dimensions are $n_x$ and $n_u$, respectively.
-The time horizon is $N \in \mathbb{N}_{>0}$ and the initial state is given as $\hat{x} \in \Xset$.
+The time horizon is $N \in \mathbb{N}_{>0}$ and the initial state is given as $\hat{x} \in \Xset$. %TODO: state explicitly that x_hat is assumed to satisfy the box and polytopic constraints of stage 0
 The system dynamics are described by the matrices $A_k \in \R{n_x \times n_x}$, $B_k \in \R{n_x \times n_u}$ and the vector $b_k \in \R{n_x}$.
 The cost function is defined by the input weight matrices $R_k \in \Spp{n_u}$, the state weight matrices $Q_k \in \Spp{n_x}$ and the cross-term weight matrices $S_k \in \R{n_u \times n_x}$, which are collected in the stage Hessian
 \[
@@ -24,10 +24,12 @@ H_k = \begin{bmatrix} R_k & S_k \\ S_k\T & Q_k \end{bmatrix}.
 \]
 The linear terms of the cost function are given by the vectors $r_k \in \R{n_u}$ and $q_k \in \R{n_x}$.
 We assume $H_k \succ 0$ for $k \in \Iset{0}{N-1}$ (equivalently $R_k \succ 0$ and $Q_k - S_k\T R_k^{-1} S_k \succ 0$), as well as $Q_N \succ 0$.
-This single premise makes the problem strictly convex, so its solution is unique, and it is exactly what the factorization-based methods derived in this paper require.
+This single premise makes the problem strictly convex, so its solution is unique, and it is sufficient for all factorization-based methods derived in this paper.
+Weaker conditions under which the Riccati recursion remains well defined are discussed in Section~\ref{sec:riccati}.
 The terminal stage $k=N$ carries no input, i.e.\ $n_{u,N} = 0$, so that only $Q_N$, $q_N$ and the state constraints appear at this stage ($D_N$ is empty), while the dynamics and the box constraints on the inputs end at $N-1$.
-There are a number of $n_{bx}$ box constraints on the states and $n_{bu}$ box constraints on the inputs, which are mapped by the selection matrices $J_k^{bx}\in\R{n_{bx} \times n_x}$ and $J_k^{bu}\in\R{n_{bu} \times n_u}$, together with the lower bounds $\underline{x}_k\in\R{n_{bx}}$, $\underline{u}_k\in\R{n_{bu}}$ and upper bounds $\bar{x}_k\in\R{n_{bx}}$, $\bar{u}_k\in\R{n_{bu}}$ respectively.
+There are a number of $n_{bx}$ box constraints on the states and $n_{bu}$ box constraints on the inputs, which are mapped by the selection matrices $J_k^{bx}\in\R{n_{bx} \times n_x}$ and $J_k^{bu}\in\R{n_{bu} \times n_u}$, whose rows are distinct rows of the identity matrix, together with the lower bounds $\underline{x}_k\in\R{n_{bx}}$, $\underline{u}_k\in\R{n_{bu}}$ and upper bounds $\bar{x}_k\in\R{n_{bx}}$, $\bar{u}_k\in\R{n_{bu}}$ respectively.
 There are a number of $n_p$ polytopic constraints represented by the matrices $D_k\in\R{n_p \times n_u}$, $C_k\in\R{n_p \times n_x}$, together with the lower bounds $\underline{d}_k\in\R{n_p}$ and upper bounds $\bar{d}_k\in\R{n_p}$.
+Since the initial state $x_0 = \hat{x}$ is fixed, no state box constraints are imposed at stage $0$, and the polytopic constraints of stage $0$ act on the input $u_0$ only, with the constant term $C_0 \hat{x}$.
 The integer set is denoted as $\Iset{a}{b} := \lbrace a, a+1, \dots b \rbrace$.
 The OCP notation is largely borrowed from HPIPM~\cite{frison2020hpipm}, and most of the derivations in this paper follow those presented there.
 

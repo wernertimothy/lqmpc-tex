@@ -388,7 +388,7 @@ We thus make the ansatz
 V_k(x_k) = \frac{1}{2} x_k\T P_k x_k + p_k\T x_k + \eta_k
 \]
 
-with $P_k \in \Sp{n_x}$, $p_k \in \R{n_x}$ and $\eta_k \in \mathbb{R}$.
+with a symmetric $P_k \in \R{n_x \times n_x}$, $p_k \in \R{n_x}$ and $\eta_k \in \mathbb{R}$; positive definiteness of $P_k$ is shown below.
 This ansatz will be verified by showing that if it holds at stage $k+1$, it also holds at stage $k$.
 The terminal condition gives
 
@@ -457,7 +457,7 @@ these are the original stage cost matrices, augmented by the contribution of the
 The matrix $\tilde{Q}_k$ is the state cost after absorbing the future cost seen through $A_k$, $\tilde{R}_k$ is the input cost after absorbing the future cost seen through $B_k$, and $\tilde{S}_k$ captures the cross-coupling.
 
 \paragraph{Minimization: the optimal policy.}
-Assume $P_{k+1} \succeq 0$, which holds for $k+1 = N$.
+Assume $P_{k+1} \succ 0$, which holds for $k+1 = N$ since $P_N = Q_N \succ 0$.
 Then $\tilde{R}_k = R_k + B_k\T P_{k+1} B_k$ inherits positive definiteness from $R_k \succ 0$, so the $\mathcal{Q}$-function is strictly convex in $u_k$ and the minimum is unique.
 Moreover, the Hessian of the $\mathcal{Q}$-function in $(u_k, x_k)$ is the \textit{augmented stage Hessian} $\tilde{H}_k := H_k + G_k\T P_{k+1} G_k \succeq H_k \succ 0$, with $G_k = \begin{bmatrix} B_k & A_k \end{bmatrix}$, and $P_k$ is its Schur complement with respect to $\tilde{R}_k$, see below.
 Hence $P_k \succ 0$ by induction from $P_N = Q_N \succ 0$, so this holds at every stage.
@@ -482,7 +482,7 @@ K_k &:= -\tilde{R}_k^{-1} \tilde{S}_k \label{eq:gain} \\
 
 This is the optimal policy we were looking for: an affine state-feedback law, parametrized at each stage by the gain $K_k$ and the offset $\kappa_k$.
 The gain $K_k$ depends only on the dynamics, the quadratic weights and $P_{k+1}$, not on the linear terms or the offsets $b_k$: it is the time-varying \textit{LQR gain}~\cite{kalman1960contributions}.
-The feedforward term $\kappa_k$ collects the affine terms in the dynamics and the linear terms in the cost, and it vanishes when $q_k$, $r_k$, $b_k$ and $q_N$ are all zero.
+The feedforward term $\kappa_k$ collects the affine terms in the dynamics and the linear terms in the cost, and it vanishes when $q_j$, $r_j$ and $b_j$ are zero for all $j \in \Iset{k}{N-1}$ and $q_N = 0$, since $p_{k+1}$ carries the linear terms of all future stages.
 
 \paragraph{The Riccati recursion.}
 Substituting the optimal policy \eqref{eq:optimal_policy} back into the $\mathcal{Q}$-function and collecting terms in $x_k$, we verify the quadratic ansatz and obtain the recursion for $P_k$ and $p_k$.
@@ -506,7 +506,7 @@ P_k = \tilde{Q}_k - \tilde{S}_k\T \tilde{R}_k^{-1} \tilde{S}_k
 \end{equation}
 
 This is the \textit{Riccati difference equation}.
-For time-invariant data, its stationary solution satisfies the discrete algebraic Riccati equation (DARE) of the infinite-horizon LQR problem~\cite{bertsekas1995dynamic}.
+For time-invariant data and $N \to \infty$, the recursion converges under stabilizability and detectability assumptions, and its limit satisfies the discrete algebraic Riccati equation (DARE) of the infinite-horizon LQR problem~\cite{bertsekas1995dynamic}.
 Expanding the shorthand \eqref{eq:Qtilde}--\eqref{eq:Rtilde}, the fully explicit form reads
 
 \[
@@ -573,47 +573,22 @@ The optimal policy $u_k^* = K_k x_k + \kappa_k$ then provides the missing coupli
 \subsection{The Riccati Recursion}
 \label{sec:riccati}
 
-The dynamic programming argument of Section~\ref{sec:dp} established that the
-optimal cost-to-go is quadratic in the state,
-\[
-V_k(x_k) = \tfrac{1}{2} x_k\T P_k x_k + p_k\T x_k + \eta_k ,
-\]
-and that each backward step minimizes the stage cost plus the downstream
-cost-to-go over the current input. Writing this minimization out in closed form
-yields the \textit{Riccati recursion}~\cite{frison2020hpipm,frison2015algorithms}, which solves the unconstrained LQ-OCP in
-two passes over the horizon: a \textit{backward pass} that propagates the value
+Collecting the results of Section~\ref{sec:dp} yields the \textit{Riccati recursion}~\cite{frison2020hpipm,frison2015algorithms},
+which solves the unconstrained LQ-OCP in two passes over the horizon: a \textit{backward pass} that propagates the value
 function and computes the affine feedback law, followed by a \textit{forward pass}
 that rolls out the optimal trajectory.
-The backward pass is built on the stage $\mathcal{Q}$-function
-\[
-\mathcal{Q}_k(u_k, x_k) := l_k(u_k, x_k) + V_{k+1}(A_k x_k + B_k u_k + b_k) .
-\]
-Its Hessian blocks and gradient are the tilde quantities below, i.e.\ the stage
-cost matrices augmented by the propagated value function $(P_{k+1}, p_{k+1})$.
 
 \paragraph{Backward pass ($k = N-1, N-2, \ldots, 0$).}
 Initialize at the terminal stage with $P_N = Q_N$, $p_N = q_N$.
-For each stage, first assemble the $\mathcal{Q}$-function blocks
-\begin{align*}
-\tilde{Q}_k &= Q_k + A_k\T P_{k+1} A_k \\
-\tilde{S}_k &= S_k + B_k\T P_{k+1} A_k \\
-\tilde{R}_k &= R_k + B_k\T P_{k+1} B_k \\
-\tilde{q}_k &= q_k + A_k\T (P_{k+1} b_k + p_{k+1}) \\
-\tilde{r}_k &= r_k + B_k\T (P_{k+1} b_k + p_{k+1}) ,
-\end{align*}
-then minimize $\mathcal{Q}_k$ over $u_k$ to obtain the affine feedback law
-\begin{align*}
-K_k &= -\tilde{R}_k^{-1} \tilde{S}_k \\
-\kappa_k &= -\tilde{R}_k^{-1} \tilde{r}_k ,
-\end{align*}
-and finally update the value function by substituting the minimizer
-$u_k^* = K_k x_k + \kappa_k$ back into $\mathcal{Q}_k$ (a Schur complement with
-respect to the $\tilde{R}_k$ block)
-\begin{align*}
-P_k &= \tilde{Q}_k - \tilde{S}_k\T \tilde{R}_k^{-1} \tilde{S}_k = \tilde{Q}_k + \tilde{S}_k\T K_k \\
-p_k &= \tilde{q}_k - \tilde{S}_k\T \tilde{R}_k^{-1} \tilde{r}_k = \tilde{q}_k + \tilde{S}_k\T \kappa_k .
-\end{align*}
-The right-hand forms reuse $K_k$ and $\kappa_k$, so $\tilde{R}_k$ is factored only
+For each stage, first assemble the $\mathcal{Q}$-function blocks \eqref{eq:Qtilde}--\eqref{eq:rtilde} from $(P_{k+1}, p_{k+1})$,
+then compute the affine feedback law \eqref{eq:gain}--\eqref{eq:feedforward},
+and finally update the value function by \eqref{eq:riccati_P} and \eqref{eq:riccati_p}, i.e.\ the Schur complement with respect to $\tilde{R}_k$.
+As shown in the paragraph on the connection to the costates, the update can be written with the feedback law as
+\[
+P_k = \tilde{Q}_k + \tilde{S}_k\T K_k , \qquad
+p_k = \tilde{q}_k + \tilde{S}_k\T \kappa_k .
+\]
+These forms reuse $K_k$ and $\kappa_k$, so $\tilde{R}_k$ is factored only
 once per stage. Since $\tilde{S}_k \in \R{n_u \times n_x}$ has the same orientation
 as the cross-weight $S_k$, the gain $K_k \in \R{n_u \times n_x}$ maps states to
 inputs directly.
