@@ -1,5 +1,5 @@
-# LQMPC-tex
+# lqmpc-tex
 
-Latex Documentation of LQMPC.
+Latex Documentation of lqmpc.
 
 This is still work in progress ...
